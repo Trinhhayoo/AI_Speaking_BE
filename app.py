@@ -10,8 +10,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from vertexai.preview.generative_models import GenerationConfig
 from fastapi.responses import StreamingResponse
 from fastapi import File, UploadFile, FastAPI
-import io
 from vertexai.generative_models import HarmCategory, HarmBlockThreshold
+import base64
+from speech_analyze import transcribe_with_confidence
 # from io import BytesIO
 
 log_client = cloud_logging.Client()
@@ -59,6 +60,8 @@ async def describe_audio(audio: UploadFile = File(...)):
     # Read bytes from uploaded file
     content = await audio.read()
 
+    confidences = transcribe_with_confidence(content)
+
     audio_part = Part.from_data(
         mime_type=audio.content_type,   # e.g. audio/wav
         data=content
@@ -75,7 +78,7 @@ async def describe_audio(audio: UploadFile = File(...)):
         safety_settings=safety_settings
     )
 
-    return {"transcript": result.text}
+    return {"transcript": result.text, "confidences": confidences}
 
 
 @app.post("/ai-voice")
@@ -90,10 +93,13 @@ def generate_ai_voice(req: Transcript):
     ai_text = get_gemini_text_response(model, req.transcript, generation_config, safety_settings)
 
     audio_content = AI_Generated_Voice(ai_text)
+    audio_base64 = base64.b64encode(audio_content).decode("utf-8")
+
 
     return {
-        "audio": StreamingResponse(io.BytesIO(audio_content), media_type="audio/mpeg"),
-        "transcript": ai_text
+        "audio": audio_base64,
+        "transcript": ai_text,
+        "mime_type": "audio/mpeg",
     }
 
 
